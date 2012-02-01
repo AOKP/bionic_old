@@ -359,14 +359,27 @@ libc_common_src_files += \
 	arch-arm/bionic/memset.S \
 	arch-arm/bionic/setjmp.S \
 	arch-arm/bionic/sigsetjmp.S \
-	arch-arm/bionic/strlen.c.arm \
 	arch-arm/bionic/strcpy.S \
 	arch-arm/bionic/strcmp.S \
 	arch-arm/bionic/syscall.S \
-	string/memmove.c.arm \
-	string/bcopy.c \
 	string/strncmp.c \
 	unistd/socketcalls.c
+ifeq ($(ARCH_ARM_HAVE_ARMV7A),false)
+libc_common_src_files += arch-arm/bionic/strlen-armv7.S
+else
+libc_common_src_files += arch-arm/bionic/strlen.c.arm
+endif
+
+# Check if we want a neonized version of memmove instead of the
+# current ARM version
+ifeq ($(TARGET_USE_SCORPION_BIONIC_OPTIMIZATION),true)
+libc_common_src_files += \
+	arch-arm/bionic/memmove.S
+else # Non-Scorpion-based ARM
+libc_common_src_files += \
+	string/bcopy.c \
+	string/memmove.c.arm
+endif # !TARGET_USE_SCORPION_BIONIC_OPTIMIZATION
 
 # These files need to be arm so that gdbserver
 # can set breakpoints in them without messing
@@ -483,6 +496,10 @@ libc_common_cflags := \
 		-DPOSIX_MISTAKE \
                 -DLOG_ON_HEAP_ERROR \
 
+ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
+libc_common_cflags += -DQCOM_HARDWARE
+endif
+
 # these macro definitions are required to implement the
 # 'timezone' and 'daylight' global variables, as well as
 # properly update the 'tm_gmtoff' field in 'struct tm'.
@@ -508,13 +525,25 @@ ifeq ($(TARGET_ARCH),arm)
   ifeq ($(ARCH_ARM_HAVE_TLS_REGISTER),true)
     libc_common_cflags += -DHAVE_ARM_TLS_REGISTER
   endif
+
+  ifeq ($(TARGET_HAVE_TEGRA_ERRATA_657451),true)
+    libc_common_cflags += -DHAVE_TEGRA_ERRATA_657451
+  endif
+  # Add in defines to activate SCORPION_NEON_OPTIMIZATION
+  ifeq ($(TARGET_USE_SCORPION_BIONIC_OPTIMIZATION),true)
+    libc_common_cflags += -DSCORPION_NEON_OPTIMIZATION
+    ifeq ($(TARGET_USE_SCORPION_PLD_SET),true)
+      libc_common_cflags += -DPLDOFFS=$(TARGET_SCORPION_BIONIC_PLDOFFS)
+      libc_common_cflags += -DPLDSIZE=$(TARGET_SCORPION_BIONIC_PLDSIZE)
+    endif
+  endif
+  ifeq ($(TARGET_CORTEX_CACHE_LINE_32),true)
+    libc_common_cflags += -DCORTEX_CACHE_LINE_32
+  endif
 else # !arm
   ifeq ($(TARGET_ARCH),x86)
-    libc_crt_target_cflags := -m32
-
-    # Enable recent IA friendly memory routines (such as for Atom)
-    # These will not work on the earlier x86 machines
-    libc_common_cflags += -mtune=i686 -DUSE_SSSE3 -DUSE_SSE2
+    libc_crt_target_cflags :=
+    # TARGET_GLOBAL_CFLAGS from build/core/combo/TARGET_linux-x86.mk sets all required flags.
   endif # x86
 endif # !arm
 

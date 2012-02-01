@@ -100,7 +100,9 @@ extern int __set_tls(void *ptr);
  * C library, because we don't know where the corresponding code
  * is going to run.
  */
-#  ifdef LIBC_STATIC
+#  if defined(LIBC_STATIC) || \
+     (defined(__ARM_ARCH_6__) && defined(HAVE_ARM_TLS_REGISTER) && \
+     !defined(__ARM_ARCH_6T2__))
 
 /* Use the kernel helper in static C library. */
   typedef volatile void* (__kernel_get_tls_t)(void);
@@ -111,6 +113,12 @@ extern int __set_tls(void *ptr);
  * Note that HAVE_ARM_TLS_REGISTER is build-specific
  * (it must match your kernel configuration)
  */
+#  ifdef HAVE_TEGRA_ERRATA_657451
+#    define __munge_tls(_v) ( ((_v)&~((1ul<<20)|1ul)) | (((_v)&0x1)<<20) )
+#  else
+#    define __munge_tls(_v) (_v)
+#endif
+
 #    ifdef HAVE_ARM_TLS_REGISTER
  /* We can read the address directly from a coprocessor
   * register, which avoids touching the data cache
@@ -119,6 +127,7 @@ extern int __set_tls(void *ptr);
 #      define __get_tls() \
     ({ register unsigned int __val asm("r0"); \
        asm ("mrc p15, 0, r0, c13, c0, 3" : "=r"(__val) ); \
+       __val = __munge_tls(__val); \
        (volatile void*)__val; })
 #    else /* !HAVE_ARM_TLS_REGISTER */
  /* The kernel provides the address of the TLS at a fixed
